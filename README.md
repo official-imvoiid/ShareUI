@@ -4,10 +4,10 @@ Share an app running on your PC — ComfyUI, Gradio, text-generation-webui, Stre
 
 | | Local network | Internet |
 |---|---|---|
-| Who can open| Devices on your Wi-Fi | Only people with the link **and** the PIN |
-| Link | `http://amber-otter-river.local:8000` — the same every time | `https://random-words.trycloudflare.com/#k=…` |
+| Who can open| Devices on your Wi-Fi, with the PIN | Only people with the link **and** the PIN |
+| Link | `http://192.168.1.24:8000` — this PC's address on the network | `https://random-words.trycloudflare.com/#k=…` |
 | Encryption | Plain HTTP inside your own network | **End-to-end encrypted** — the relay carries scrambled bytes only |
-| PIN | Optional | Required |
+| PIN | Required | Required |
 
 ```
   ──────────────────────────────────────────────────────────────────
@@ -15,7 +15,7 @@ Share an app running on your PC — ComfyUI, Gradio, text-generation-webui, Stre
   ──────────────────────────────────────────────────────────────────
 
   COMFYUI  -> http://127.0.0.1:8188  ● running
-  local     http://amber-otter-river.local:8000  · PIN
+  local     http://192.168.1.24:8000  · PIN
   internet  https://broader-going-segments.trycloudflare.com/#k=…  · encrypted end-to-end · PIN
 
     █▀▀▀▀▀█ ▀▄█ ▄▀ █▀▀▀▀▀█
@@ -53,7 +53,7 @@ Then:
 
 1. Pick your app from the list of what is running on this PC (or type a port).
 2. Pick **1** local network, **2** internet, or **3** both.
-3. Set the PIN — optional on the local network, required for the internet link.
+3. Set the PIN. Every link needs one, local included: press Enter to keep the PIN from last time.
 
 Keys while it runs:
 
@@ -61,7 +61,7 @@ Keys while it runs:
 |---|---|
 | `C` | Copy a link to the clipboard |
 | `S` | Save the QR codes as PNG files into `qr-codes/` |
-| `P` | Add or change the PIN (everyone has to unlock again) |
+| `P` | Change the PIN (everyone has to unlock again) |
 | `Q` | Quit and close every link |
 
 The window also reports when a device unlocks a link, when someone is blocked for wrong PINs, when this PC's IP changes, and when your app stops or comes back.
@@ -69,7 +69,7 @@ The window also reports when a device unlocks a link, when someone is blocked fo
 Skipping the menu:
 
 ```bash
-node app.js 8188 --lan --no-pin
+node app.js 8188 --lan --pin 246813
 node app.js 8188 --cloud --pin 246813
 node app.js 8188 --both --pin 246813
 ```
@@ -81,15 +81,32 @@ node app.js 8188 --both --pin 246813
 | `--lan`, `--cloud`, `--both` | How to share |
 | `--lan-port <n>` | First port for local links (default `8000`, remembered per app) |
 | `--pin <pin>` | PIN visitors must type (4–12 digits, remembered) |
-| `--no-pin` | No PIN on the local link (the internet link always needs one) |
 
-## The local link never changes
+## The local link
 
-The local link is a fixed name like `http://amber-otter-river.local:8000`, chosen once and stored in `share-settings.json`.
+The local link is this PC's address on the network, like `http://192.168.1.24:8000` — plain numbers, because they work on every device. Android has no mDNS resolver, so a `.local` name never opens in a browser on a phone.
 
-Share answers the name lookups for it (mDNS) with whatever IP this PC has at that moment, so when the router hands out a new address, the same link and the same QR code keep working. A background check every 3 seconds keeps it in step.
+A background check every 3 seconds watches the address. Routers normally hand the same one back each time a lease renews, so in practice the link stays the same all day. If the address really does change, Share prints a new link and QR code, because the old address has stopped answering.
 
-Works on iPhone, iPad, Mac, Windows, Linux and Android 12+. Older Android phones cannot resolve `.local` names — use the internet link there.
+## What Share remembers
+
+Share writes `share-settings.json` next to `app.js` on first run. It is git-ignored, and deleting it costs nothing: Share rebuilds it with fresh defaults.
+
+```json
+{
+  "targetPort": 7860,        // the app you shared last, so the menu can offer it again
+  "lanPort": 8000,           // the first local port to try
+  "lanPorts": { "7860": 8000 },  // app port -> local port, so each app keeps its own link
+  "lanPin": true,            // the local link asks for the PIN (always true now)
+  "pin": "246813",           // your PIN, so you do not retype it every run
+  "lanSecret": "…",          // signs unlock cookies, so a stolen cookie from another PC is useless
+  "lastMode": "lan"          // local, internet or both, whichever you picked last
+}
+```
+
+The useful part is `lanPorts`. Because each app keeps its port, the local link is the same link tomorrow — you only rescan the QR if this PC's address changes.
+
+Delete the file to start over. Everyone is logged out and you get a new PIN.
 
 ## Sharing a second app
 
@@ -125,7 +142,7 @@ Also built in:
 ## Troubleshooting
 
 - **A phone cannot open the local link.** If Windows marks the network as *Public*, the firewall blocks incoming connections: Settings → Network & internet → Wi-Fi → your network → **Private network**, and allow Node.js when Windows Firewall asks. Share warns you when the network is Public.
-- **An old Android phone cannot open `.local`.** Use the internet link.
+- **The local link changed.** Your router gave this PC a new address. Share prints the new link and QR within seconds; the old one cannot work any more.
 - **`cloudflared` not found.** Let Share install it, or install it yourself (see Requirements).
 - **The internet link changes every run.** That is how free quick tunnels work. A permanent address needs a Cloudflare account and your own domain.
 - **The app restarted.** Visitors get a "waiting for the app" page that retries by itself.
@@ -139,13 +156,11 @@ lib/proxy.js        local network proxy for one port, behind the PIN
 lib/gate.js         PIN lock for the local link (rate limits, signed sessions)
 lib/tunnel.js       starts cloudflared, restarts it, verifies the link
 lib/network.js      LAN IP detection + background change watcher
-lib/mdns.js         answers <name>.local with the current IP
 lib/ports.js        finds running web apps
-lib/words.js        random link names
 lib/qr.js           QR codes for the terminal and as PNG
 public/e2e-*        unlock page, service worker, page helper, shared crypto
 public/gate.html    PIN page for the local link
-share-settings.json saved ports, link name and PIN (created on first run, never committed)
+share-settings.json saved ports and PIN (created on first run, never committed)
 ```
 
 ## License
