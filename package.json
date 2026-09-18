@@ -1,0 +1,23 @@
+{
+  "name": "share",
+  "version": "2.0.0",
+  "description": "Share a localhost app (ComfyUI, Gradio, Streamlit, Node, ...) on your local network, or over the internet end-to-end encrypted, with a QR code and a PIN",
+  "main": "app.js",
+  "private": true,
+  "license": "MIT",
+  "keywords": ["localhost", "share", "tunnel", "cloudflared", "end-to-end-encryption", "qr", "lan", "mdns", "comfyui", "gradio"],
+  "scripts": {
+    "start": "node app.js",
+    "lan": "node app.js --lan",
+    "cloud": "node app.js --cloud"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1",
+    "multicast-dns": "^7.2.5",
+    "qrcode": "^1.5.4",
+    "ws": "^8.21.3"
+  }
+}
