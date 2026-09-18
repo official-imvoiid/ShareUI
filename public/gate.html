@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex, nofollow">
+<title>PIN needed</title>
+<style nonce="{{NONCE}}">
+  :root { --bg:#f4f3ef; --card:#fff; --ink:#1d1d1b; --muted:#6b6a65; --line:#e3e1da; --accent:#1f6f5c; --bad:#b3261e; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#141413; --card:#1e1e1c; --ink:#ecebe6; --muted:#9d9b94; --line:#33322e; --accent:#5cc4a6; --bad:#ff8a80; } }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px; background:var(--bg); color:var(--ink);
+         font:16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { width:100%; max-width:380px; background:var(--card); border:1px solid var(--line); border-radius:16px; padding:28px 24px; }
+  .lock { width:44px; height:44px; border-radius:12px; display:grid; place-items:center; background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); margin-bottom:14px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  p { margin:0 0 18px; color:var(--muted); font-size:14px; }
+  label { display:block; font-size:13px; font-weight:600; margin:0 0 6px; }
+  input { width:100%; font:inherit; letter-spacing:.15em; padding:11px 12px; border-radius:10px; border:1px solid var(--line); background:transparent; color:var(--ink); margin-bottom:12px; }
+  input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  button { width:100%; font:inherit; font-weight:600; padding:11px; border:0; border-radius:10px; background:var(--accent); color:#fff; cursor:pointer; }
+  button:disabled { opacity:.6; }
+  .err { color:var(--bad); font-size:14px; min-height:21px; margin:10px 0 0; }
+</style>
+</head>
+<body>
+<main class="card">
+  <div class="lock" aria-hidden="true">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
+  </div>
+  <h1>PIN needed</h1>
+  <form id="form">
+    <p>This app is shared on the local network. Enter the PIN the owner gave you.</p>
+    <label for="pin">PIN</label>
+    <input id="pin" type="password" inputmode="numeric" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+    <button type="submit" id="go">Unlock</button>
+  </form>
+  <div class="err" id="err" role="alert"></div>
+</main>
+<script nonce="{{NONCE}}">
+(function () {
+  var form = document.getElementById('form');
+  var pin = document.getElementById('pin');
+  var go = document.getElementById('go');
+  var err = document.getElementById('err');
+  pin.focus();
+  form.addEventListener('submit', function (event) {
+    event.preventDefault();
+    go.disabled = true;
+    err.textContent = '';
+    fetch('/__share/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ pin: pin.value.trim() })
+    }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (body) {
+        if (res.ok) return location.replace(location.pathname + location.search);
+        err.textContent = body.error || 'Could not unlock.';
+        go.disabled = false;
+        pin.value = '';
+        pin.focus();
+      });
+    }).catch(function () {
+      err.textContent = 'Network error. Try again.';
+      go.disabled = false;
+    });
+  });
+})();
+</script>
+</body>
+</html>
