@@ -5,7 +5,7 @@
   "main": "app.js",
   "private": true,
   "license": "MIT",
-  "keywords": ["localhost", "share", "tunnel", "cloudflared", "end-to-end-encryption", "qr", "lan", "mdns", "comfyui", "gradio"],
+  "keywords": ["localhost", "share", "tunnel", "cloudflared", "end-to-end-encryption", "qr", "lan", "comfyui", "gradio"],
   "scripts": {
     "start": "node app.js",
     "lan": "node app.js --lan",
@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "http-proxy": "^1.18.1",
-    "multicast-dns": "^7.2.5",
     "qrcode": "^1.5.4",
     "ws": "^8.21.3"
   }

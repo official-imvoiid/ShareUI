@@ -12,7 +12,6 @@ const qr = require('./lib/qr');
 const { PinGate } = require('./lib/gate');
 const { E2EShare } = require('./lib/e2e');
 const { NetworkWatcher } = require('./lib/network');
-const { startMdns } = require('./lib/mdns');
 const { createShareServer } = require('./lib/proxy');
 const { QuickTunnel, findCloudflared } = require('./lib/tunnel');
 const { discover, describe, isUp } = require('./lib/ports');
@@ -282,10 +281,12 @@ class AppShare {
     }
   }
 
+  // This PC's address on the network. Plain numbers, because they work on every device:
+  // Android has no mDNS resolver, so a ".local" name never opens in a browser there.
   lanLink() {
     if (!this.server) return null;
-    const host = this.owner.mdns && this.owner.mdns.ok ? this.owner.mdns.host : this.owner.watcher.current.primary;
-    return host ? `http://${host}:${this.lanActualPort}` : null;
+    const ip = this.owner.watcher.current.primary;
+    return ip ? `http://${ip}:${this.lanActualPort}` : null;
   }
 
   cloudLink() {
@@ -417,7 +418,6 @@ class ShareApp {
   async start() {
     this.watcher = new NetworkWatcher(3000);
     await this.watcher.start();
-    if (this.wantsLan) this.mdns = startMdns(this.settings.lanWords, this.watcher, (msg) => log(c.dim(`  ${msg}`)));
 
     await this.share.start();
 
@@ -462,14 +462,13 @@ class ShareApp {
     share.printedStatus = tunnel.status;
   }
 
+  // The address is part of the link, so a new address means a new link and a new QR code.
   async onNetworkChange(snap, prev) {
-    if (this.mdns) this.mdns.announce();
     await this.checkFirewallProfile();
     if (!this.wantsLan || snap.primary === prev.primary) return;
-    const stable = this.mdns && this.mdns.ok;
-    this.note(c.dim(`This PC's IP changed: ${prev.primary || 'offline'} -> ${snap.primary || 'offline'}.`)
-      + (stable ? c.dim(' Your links and QR codes stay the same.') : ''));
-    if (!stable && snap.primary) await this.render(false);
+    if (!snap.primary) return this.warn('This PC left the network. The local link stops working until it is back.');
+    this.note(`This PC's IP changed: ${prev.primary || 'offline'} -> ${snap.primary}. New link and QR code below.`, 'ok');
+    await this.render(false);
   }
 
   checkFirewallProfile(quiet = false) {
@@ -648,7 +647,6 @@ class ShareApp {
     try { if (process.stdin.isTTY) process.stdin.setRawMode(false); } catch {}
     clearInterval(this.healthTimer);
     this.share.stop();
-    if (this.mdns) this.mdns.stop();
     if (this.watcher) this.watcher.stop();
     setTimeout(() => process.exit(code), 400);
   }
