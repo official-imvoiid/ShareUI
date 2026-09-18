@@ -93,7 +93,7 @@ function parseArgs(argv) {
       case '--both': a.mode = 'both'; break;
       case '--lan-port': a.lanPort = Number(argv[++i]); break;
       case '--pin': a.pin = argv[++i] || ''; break;
-      case '--no-pin': a.lanPin = false; break;
+      case '--no-pin': a.noPinAsked = true; break; // kept so older commands still run
       case '--lan-pin': a.lanPin = true; break;
       case '-h': case '--help': a.help = true; break;
       default:
@@ -122,7 +122,6 @@ function printHelp() {
     --host <addr>      app address (default 127.0.0.1)
     --lan-port <n>     first port for the local link (default 8000, remembered per app)
     --pin <pin>        PIN visitors must type (4-12 digits, remembered)
-    --no-pin           no PIN on the local links (the internet link always needs one)
 `);
 }
 
@@ -180,20 +179,22 @@ async function pickMode(settings) {
   return modes[(Number(answer) || fallback) - 1] || 'lan';
 }
 
-// The internet link always needs a PIN; on the local network it is optional.
+// Every link needs a PIN, the local one included: anyone on the same Wi-Fi can find the
+// port by scanning a few hundred addresses, so a link on its own is not a secret.
 async function askPin(settings, args, mode, interactive) {
+  if (args.noPinAsked) {
+    log(`\n  ${sym.warn} ${c.yellow('--no-pin no longer works: the local link needs a PIN too.')}`);
+  }
   if (args.pin !== undefined) {
     if (!/^\d{4,12}$/.test(args.pin)) throw new Error('The PIN must be 4 to 12 digits.');
-    return { pin: args.pin, lanPin: args.lanPin !== undefined ? args.lanPin : true };
+    return { pin: args.pin, lanPin: true };
   }
-  if (!interactive) {
-    return { pin: settings.pin, lanPin: args.lanPin !== undefined ? args.lanPin : settings.lanPin !== false };
-  }
+  if (!interactive) return { pin: settings.pin, lanPin: true };
 
   if (mode === 'lan') {
     for (;;) {
-      const answer = await ask(`\n  PIN for the local link ${c.dim('(4-12 digits, Enter = no PIN)')}: `);
-      if (!answer) return { pin: settings.pin, lanPin: false };
+      const answer = await ask(`\n  PIN for the local link ${c.dim(`(4-12 digits, Enter = ${settings.pin})`)}: `);
+      if (!answer) return { pin: settings.pin, lanPin: true };
       if (/^\d{4,12}$/.test(answer)) return { pin: answer, lanPin: true };
       log(`  ${sym.warn} ${c.yellow('Digits only, 4 to 12 of them.')}`);
     }
@@ -206,11 +207,7 @@ async function askPin(settings, args, mode, interactive) {
     if (/^\d{4,12}$/.test(answer)) { pin = answer; break; }
     log(`  ${sym.warn} ${c.yellow('Digits only, 4 to 12 of them.')}`);
   }
-  if (mode === 'cloud') return { pin, lanPin: true };
-
-  const answer = await ask(`  Ask for the PIN on the local link too? ${c.dim(settings.lanPin === false ? '[y/N]' : '[Y/n]')}: `);
-  const lanPin = answer ? /^y/i.test(answer) : settings.lanPin !== false;
-  return { pin, lanPin };
+  return { pin, lanPin: true };
 }
 
 async function ensureCloudflared(interactive) {
@@ -340,7 +337,7 @@ class AppShare {
       if (!link) {
         log(`  ${sym.off} ${c.yellow('Local network: not connected to a network yet.')}`);
       } else {
-        log(`  ${c.dim('local')}     ${c.bold(c.cyan(link))}  ${c.dim(owner.lanPin ? '· PIN' : '· no PIN')}`);
+        log(`  ${c.dim('local')}     ${c.bold(c.cyan(link))}  ${c.dim('· PIN')}`);
         if (this.lanActualPort !== owner.lanPortFor(this.target.port)) {
           log(`  ${sym.warn} ${c.yellow(`Preferred port was busy, using ${this.lanActualPort} for now.`)}`);
         }
@@ -524,29 +521,18 @@ class ShareApp {
   }
 
   async changePin() {
-    const canRemove = !this.wantsCloud; // the internet link always needs a PIN
-    const verb = this.usesPin ? 'New PIN' : 'PIN';
-    const pin = await this.prompt(`\n  ${verb} ${c.dim(canRemove && this.lanPin ? '(4-12 digits, Enter = remove the PIN)' : '(4-12 digits, Enter = cancel)')}: `);
+    const pin = await this.prompt(`\n  New PIN ${c.dim('(4-12 digits, Enter = cancel)')}: `);
 
-    if (!pin) {
-      if (!canRemove || !this.lanPin) return log(c.dim('  Cancelled.'));
-      this.lanPin = false;
-      this.settings.lanPin = false;
-      config.save(this.settings);
-      this.share.setPin(this.pin, false);
-      log(`  ${sym.ok} PIN removed. Anyone on your Wi-Fi can open the local links now.`);
-      return this.printKeys();
-    }
+    if (!pin) return log(c.dim('  Cancelled.'));
     if (!/^\d{4,12}$/.test(pin)) return log(`  ${sym.warn} ${c.yellow('Digits only, 4 to 12 of them.')}`);
 
-    const added = !this.lanPin && !this.wantsCloud;
     this.pin = pin;
     this.lanPin = true;
     this.settings.pin = pin;
     this.settings.lanPin = true;
     config.save(this.settings);
     this.share.setPin(pin, true);
-    log(`  ${sym.ok} ${c.green(`PIN is now ${pin}.`)} ${added ? 'The local links ask for it from now on.' : 'Everyone has to unlock again.'}`);
+    log(`  ${sym.ok} ${c.green(`PIN is now ${pin}.`)} Everyone has to unlock again.`);
     this.printKeys();
   }
 
@@ -567,13 +553,8 @@ class ShareApp {
     const key = (letter, text) => `${c.inverse(` ${letter} `)} ${text}`;
     log('');
     rule();
-    if (this.usesPin) {
-      const where = this.wantsCloud && !this.lanPin && this.wantsLan ? ' (internet link only)' : '';
-      log(`  ${c.bold('PIN')} ${c.bold(c.cyan(this.pin))}${c.dim(where)}  ${c.dim('tell this to people separately from the link')}`);
-    } else {
-      log(`  ${c.dim('No PIN: anyone on your Wi-Fi can open the local links.')}`);
-    }
-    log(`  ${key('C', 'copy link')}   ${key('S', 'save QR images')}   ${key('P', this.usesPin ? 'change PIN' : 'add PIN')}   ${key('Q', 'quit')}`);
+    log(`  ${c.bold('PIN')} ${c.bold(c.cyan(this.pin))}  ${c.dim('tell this to people separately from the link')}`);
+    log(`  ${key('C', 'copy link')}   ${key('S', 'save QR images')}   ${key('P', 'change PIN')}   ${key('Q', 'quit')}`);
     log(c.dim('  Another app to share? Open Share again in a new window - it takes the next port by itself.'));
     rule();
   }
