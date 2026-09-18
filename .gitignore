@@ -1,0 +1,5 @@
+node_modules/
+share-settings.json
+qr-codes/
+bin/
+*.log
